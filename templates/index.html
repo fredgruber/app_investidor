@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Simulador DCA Bitcoin vs Tradicional</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Simulador de Investimentos DCA</h1>
+            <div class="subtitle">Compare a estratégia Dollar-Cost Averaging em Bitcoin contra Lump Sum em Ouro e S&P 500</div>
+        </header>
+
+        <section class="card">
+            <form action="/simulate" method="POST">
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label for="startDate">Data de Início</label>
+                        <input type="date" id="startDate" name="startDate" value="{{.StartDate}}" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="endDate">Data Final</label>
+                        <input type="date" id="endDate" name="endDate" value="{{.EndDate}}" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="amount">Valor por Período (USD)</label>
+                        <input type="number" id="amount" name="amount" value="{{.Amount}}" min="10" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="frequency">Frequência</label>
+                        <select id="frequency" name="frequency">
+                            <option value="daily" {{if eq .Frequency "daily"}}selected{{end}}>Diário</option>
+                            <option value="weekly" {{if eq .Frequency "weekly"}}selected{{end}}>Semanal</option>
+                            <option value="monthly" {{if eq .Frequency "monthly"}}selected{{end}}>Mensal</option>
+                        </select>
+                    </div>
+                </div>
+                <button type="submit">Simular Cenário</button>
+            </form>
+        </section>
+
+        {{if .Error}}
+        <div class="card" style="border-color: #ea3943;">
+            <p style="color: #ea3943;">{{.Error}}</p>
+        </div>
+        {{end}}
+
+        {{if .Results}}
+        <section class="card">
+            <h2>Resultados</h2>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Estratégia</th>
+                        <th>Total Investido</th>
+                        <th>Valor Final</th>
+                        <th>Retorno %</th>
+                        <th>Vantagem vs DCA</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {{range .Results}}
+                    <tr>
+                        <td>{{.StrategyName}}</td>
+                        <td>${{printf "%.2f" .TotalInvested}}</td>
+                        <td>${{printf "%.2f" .FinalValue}}</td>
+                        <td class="{{if ge .ReturnPercent 0.0}}positive{{else}}negative{{end}}">{{printf "%.2f" .ReturnPercent}}%</td>
+                        <td>
+                            <!-- Cálculo simples de vantagem visual -->
+                             - 
+                        </td>
+                    </tr>
+                    {{end}}
+                </tbody>
+            </table>
+            
+            <div class="best-strategy">
+                🏆 Melhor Estratégia: {{.BestStrategy}}
+            </div>
+        </section>
+
+        <section class="insights">
+            <div class="insight-card">
+                <h3>💡 Por que DCA?</h3>
+                <p>O Dollar-Cost Averaging (DCA) suaviza a entrada no mercado. Ao comprar quantias fixas regularmente, você compra mais Bitcoin quando o preço cai e menos quando sobe, reduzindo o preço médio por moeda e eliminando o estresse de tentar acertar o "fundo" do mercado (timing).</p>
+            </div>
+            
+            <div class="insight-card">
+                <h3>📊 Volatilidade vs Estabilidade</h3>
+                <p>O Bitcoin tende a ter alta volatilidade, o que pode gerar retornos massivos ou quedas bruscas. O Ouro (XAU) é historicamente uma reserva de valor estável. O S&P 500 representa o crescimento da economia americana. Comparar os três ajuda a entender o perfil de risco-retorno.</p>
+            </div>
+        </section>
+        {{end}}
+    </div>
+</body>
+</html>
