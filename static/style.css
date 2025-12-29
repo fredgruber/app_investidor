@@ -1,0 +1,158 @@
+:root {
+    --primary-color: #F7931A; /* Bitcoin Orange */
+    --secondary-color: #232F3E; /* Dark Blue */
+    --accent-color: #16C784; /* Crypto Green */
+    --bg-color: #0d1117;
+    --text-color: #e6e6e6;
+    --card-bg: #161b22;
+    --border-color: #30363d;
+}
+
+body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    background-color: var(--bg-color);
+    color: var(--text-color);
+    margin: 0;
+    padding: 0;
+    line-height: 1.6;
+}
+
+.container {
+    max-width: 1000px;
+    margin: 0 auto;
+    padding: 2rem;
+}
+
+header {
+    text-align: center;
+    margin-bottom: 3rem;
+}
+
+h1 {
+    color: var(--primary-color);
+    font-size: 2.5rem;
+    margin-bottom: 0.5rem;
+}
+
+.subtitle {
+    color: #8b949e;
+    font-size: 1.1rem;
+}
+
+.card {
+    background: var(--card-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    padding: 2rem;
+    margin-bottom: 2rem;
+    box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+}
+
+.form-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 1.5rem;
+    margin-bottom: 1.5rem;
+}
+
+.form-group {
+    display: flex;
+    flex-direction: column;
+}
+
+label {
+    margin-bottom: 0.5rem;
+    font-weight: 600;
+    color: #8b949e;
+}
+
+input, select {
+    background: #0d1117;
+    border: 1px solid var(--border-color);
+    color: var(--text-color);
+    padding: 0.75rem;
+    border-radius: 6px;
+    font-size: 1rem;
+}
+
+input:focus, select:focus {
+    outline: none;
+    border-color: var(--primary-color);
+    box-shadow: 0 0 0 2px rgba(247, 147, 26, 0.2);
+}
+
+button {
+    background: var(--primary-color);
+    color: white;
+    border: none;
+    padding: 1rem 2rem;
+    font-size: 1.1rem;
+    font-weight: bold;
+    border-radius: 8px;
+    cursor: pointer;
+    width: 100%;
+    transition: transform 0.1s, background 0.2s;
+}
+
+button:hover {
+    background: #e08214;
+    transform: translateY(-2px);
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 1rem;
+}
+
+th, td {
+    padding: 1rem;
+    text-align: left;
+    border-bottom: 1px solid var(--border-color);
+}
+
+th {
+    color: #8b949e;
+    font-weight: 600;
+}
+
+tr:hover {
+    background: rgba(255,255,255,0.02);
+}
+
+.positive {
+    color: var(--accent-color);
+    font-weight: bold;
+}
+
+.negative {
+    color: #ea3943;
+    font-weight: bold;
+}
+
+.best-strategy {
+    margin-top: 1rem;
+    padding: 1rem;
+    background: rgba(22, 199, 132, 0.1);
+    border: 1px solid var(--accent-color);
+    border-radius: 8px;
+    color: var(--accent-color);
+    text-align: center;
+    font-weight: bold;
+}
+
+.insights {
+    margin-top: 2rem;
+}
+
+.insight-card {
+    background: rgba(255,255,255,0.03);
+    padding: 1rem;
+    border-radius: 8px;
+    margin-bottom: 1rem;
+}
+
+.insight-card h3 {
+    margin-top: 0;
+    color: var(--primary-color);
+}
