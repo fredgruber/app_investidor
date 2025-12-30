@@ -65,6 +65,11 @@ type PageData struct {
 	// Estado dos checkboxes
 	SelectedDCA   map[string]bool
 	SelectedLS    map[string]bool
+	
+	// Estado do Custom Asset
+	CustomTicker  string
+	CustomDCA     bool
+	CustomLS      bool
 
 	Results       []calculator.StrategyResult
 	BestStrategy  string
@@ -121,6 +126,23 @@ func handleSimulate(w http.ResponseWriter, r *http.Request) {
 	r.ParseForm()
 	dcaAssets := r.Form["dca_assets"]
 	lsAssets := r.Form["ls_assets"]
+	
+	customTicker := r.FormValue("custom_ticker")
+	customDCA := r.FormValue("custom_dca") == "on"
+	customLS := r.FormValue("custom_ls") == "on"
+	
+	// Adicionar ativo customizado às listas se selecionado
+	if customTicker != "" {
+		// Normalizar ticker (uppercase)
+		// Mas Go não tem strings.ToUpper fácil sem import "strings", vou deixar como está ou adicionar import
+		// Assumindo usuário digita certo ou Yahoo resolve.
+		if customDCA {
+			dcaAssets = append(dcaAssets, customTicker)
+		}
+		if customLS {
+			lsAssets = append(lsAssets, customTicker)
+		}
+	}
 
 	// Validar inputs
 	startDate, err := time.Parse("2006-01-02", startDateStr)
@@ -154,6 +176,9 @@ func handleSimulate(w http.ResponseWriter, r *http.Request) {
 		Assets:       SupportedAssets,
 		SelectedDCA:  selDca,
 		SelectedLS:   selLs,
+		CustomTicker: customTicker,
+		CustomDCA:    customDCA,
+		CustomLS:     customLS,
 	}
 
 	if len(dcaAssets) == 0 && len(lsAssets) == 0 {

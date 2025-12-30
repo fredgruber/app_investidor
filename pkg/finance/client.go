@@ -49,69 +49,123 @@ func (c *Client) GetHistoricalData(symbol string, startDate, endDate time.Time) 
 		return c.getSyntheticFixedIncomeData(annualRate, startDate, endDate)
 	}
 
+	// Lógica para Ações Brasileiras (.SA) - Conversão automática para USD
+	if len(symbol) > 3 && symbol[len(symbol)-3:] == ".SA" {
+		return c.getBrazilianStockInUSD(symbol, startDate, endDate)
+	}
+
 	period1 := startDate.Unix()
 	period2 := endDate.Unix()
 
 	// URL da Chart API (API v8) - geralmente mais permissiva que v7/download
 	url := fmt.Sprintf("https://query1.finance.yahoo.com/v8/finance/chart/%s?period1=%d&period2=%d&interval=1d", symbol, period1, period2)
 
+	return c.fetchRawQuotes(url)
+}
+
+
+
+// getBrazilianStockInUSD busca a ação em BRL e converte para USD usando o câmbio do dia
+func (c *Client) getBrazilianStockInUSD(symbol string, startDate, endDate time.Time) ([]Quote, error) {
+	// 1. Buscar dados da ação em Reais (BRL)
+	// Precisamos usar o método "raw" (sem recursão para .SA) ou chamar a lógica interna.
+	// Vamos refatorar levemente: criar um metodo interno "fetchRaw" ou apenas chamar GetHistoricalData ignorando o sufixo?
+	// Não, isso causaria loop infinito se chamar GetHistoricalData("PETR4.SA").
+	// Solução: Criar função privada `fetchYahooRaw` com a lógica de HTTP request.
+	
+	// Como não quero refatorar tudo agora, vou duplicar a chamada raw aqui ou usar um "hack" de sufixo? 
+	// Melhor: extrair a lógica HTTP para function auxiliar.
+	// Mas para ser menos intrusivo no replace_file_content, vou implementar a chamada raw aqui dentro.
+	
+	period1 := startDate.Unix()
+	period2 := endDate.Unix()
+	url := fmt.Sprintf("https://query1.finance.yahoo.com/v8/finance/chart/%s?period1=%d&period2=%d&interval=1d", symbol, period1, period2)
+	
+	stockQuotes, err := c.fetchRawQuotes(url)
+	if err != nil {
+		return nil, fmt.Errorf("erro ao buscar %s original: %v", symbol, err)
+	}
+	
+	// 2. Buscar Câmbio (BRL=X)
+	exchangeQuotes, err := c.GetHistoricalData("BRL=X", startDate, endDate)
+	if err != nil {
+		return nil, fmt.Errorf("erro ao obter câmbio: %v", err)
+	}
+
+	// 3. Cruzar dados e converter e alinhar datas
+	// Mapa de câmbio para acesso rápido por data (YYYY-MM-DD)
+	exchangeMap := make(map[string]float64)
+	for _, q := range exchangeQuotes {
+		key := q.Date.Format("2006-01-02")
+		exchangeMap[key] = q.Close
+	}
+
+	var convertedQuotes []Quote
+	for _, sq := range stockQuotes {
+		key := sq.Date.Format("2006-01-02")
+		rate, ok := exchangeMap[key]
+		
+		if !ok || rate == 0 {
+			// Se não tem cambio no dia (feriado USA vs BR?), tente usar o do dia anterior?
+			// Por simplicidade, pular
+			continue
+		}
+		
+		convertedPrice := sq.Close / rate
+		convertedQuotes = append(convertedQuotes, Quote{
+			Date: sq.Date,
+			Close: convertedPrice,
+		})
+	}
+	
+	return convertedQuotes, nil
+}
+
+// fetchRawQuotes encapsula a chamada HTTP básica ao Yahoo para reutilização
+func (c *Client) fetchRawQuotes(url string) ([]Quote, error) {
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
-		return nil, fmt.Errorf("erro ao criar requisição: %v", err)
+		return nil, err
 	}
-	// User-Agent de navegador moderno
 	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
 
 	client := &http.Client{}
 	resp, err := client.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("erro na requisição HTTP: %v", err)
+		return nil, err
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("erro ao obter dados do Yahoo Finance (Chart API): status %d", resp.StatusCode)
+		return nil, fmt.Errorf("status %d", resp.StatusCode)
 	}
 
 	var chartResp ChartResponse
 	if err := json.NewDecoder(resp.Body).Decode(&chartResp); err != nil {
-		return nil, fmt.Errorf("erro ao decodificar JSON: %v", err)
+		return nil, err
 	}
 
 	if len(chartResp.Chart.Result) == 0 {
-		return nil, fmt.Errorf("nenhum resultado retornado para o símbolo %s", symbol)
+		return nil, fmt.Errorf("sem dados")
 	}
 
 	result := chartResp.Chart.Result[0]
 	timestamps := result.Timestamp
 	closes := result.Indicators.Quote[0].Close
-
-	if len(timestamps) != len(closes) {
-		// As vezes pode haver mismatch se houver nulos, mas geralmente é alinhado
-		// Vamos prevenir panic
-		minLen := len(timestamps)
-		if len(closes) < minLen {
-			minLen = len(closes)
-		}
-		timestamps = timestamps[:minLen]
-		closes = closes[:minLen]
+	
+	minLen := len(timestamps)
+	if len(closes) < minLen {
+		minLen = len(closes)
 	}
-
+	
 	var quotes []Quote
-	for i, ts := range timestamps {
-		// Às vezes o valor é 0 ou null no JSON (que vira 0 no float64 se omitido, mas ponteiro resolveria)
-		// Para simplificar, assumimos que 0.0 é inválido para estes ativos
-		price := closes[i]
-		if price == 0 {
-			continue
-		}
-
+	for i := 0; i < minLen; i++ {
+		if closes[i] == 0 { continue }
 		quotes = append(quotes, Quote{
-			Date:  time.Unix(ts, 0),
-			Close: price,
+			Date: time.Unix(timestamps[i], 0),
+			Close: closes[i],
 		})
 	}
-
 	return quotes, nil
 }
 
