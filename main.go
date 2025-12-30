@@ -8,18 +8,67 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"sort"
 	"strconv"
 	"time"
 )
 
+
+// Estrutura para definir opções de ativos
+type AssetOption struct {
+	Symbol   string
+	Name     string
+	Category string
+}
+
+// Lista Global de Ativos Suportados
+var SupportedAssets = []AssetOption{
+	// Cripto
+	{"BTC-USD", "Bitcoin (BTC)", "Cripto"},
+	{"ETH-USD", "Ethereum (ETH)", "Cripto"},
+	{"SOL-USD", "Solana (SOL)", "Cripto"},
+	
+	// Commodities / Índices
+	{"GC=F", "Ouro (Gold)", "Commodities"},
+	{"^GSPC", "S&P 500", "Indices"},
+	{"^IXIC", "Nasdaq 100", "Indices"},
+
+	// Brasil (ADRs)
+	{"EWZ", "iShares MSCI Brazil ETF", "Brasil"},
+	{"PBR", "Petrobras (PBR)", "Brasil"},
+	{"VALE", "Vale (VALE)", "Brasil"},
+	{"ITUB", "Itaú Unibanco (ITUB)", "Brasil"},
+	{"NU", "Nubank (NU)", "Brasil"},
+
+	// Renda Fixa BRL (Sintética USD)
+	{"FIXED-BRL-6.17", "Poupança BR (Est. 6.17% a.a.)", "Brasil RF"},
+	{"FIXED-BRL-10.0", "Tesouro Selic (Est. 10% a.a.)", "Brasil RF"},
+	{"FIXED-BRL-12.0", "CDB Pré (Est. 12% a.a.)", "Brasil RF"},
+
+	// USA Tech / Stocks
+	{"AAPL", "Apple (AAPL)", "EUA"},
+	{"MSFT", "Microsoft (MSFT)", "EUA"},
+	{"GOOGL", "Google (GOOGL)", "EUA"},
+	{"AMZN", "Amazon (AMZN)", "EUA"},
+	{"TSLA", "Tesla (TSLA)", "EUA"},
+	{"NVDA", "NVIDIA (NVDA)", "EUA"},
+	{"META", "Meta (Facebook)", "EUA"},
+}
+
 type PageData struct {
-	StartDate   string
-	EndDate     string
-	Amount      string
-	Frequency   string
-	Results     []calculator.StrategyResult
-	BestStrategy string
-	Error       string
+	StartDate     string
+	EndDate       string
+	Amount        string
+	Frequency     string
+	Assets        []AssetOption
+	
+	// Estado dos checkboxes
+	SelectedDCA   map[string]bool
+	SelectedLS    map[string]bool
+
+	Results       []calculator.StrategyResult
+	BestStrategy  string
+	Error         string
 }
 
 func main() {
@@ -29,13 +78,6 @@ func main() {
 		log.Fatal(err)
 	}
 	fmt.Println("Diretório atual de execução:", dir)
-
-	// Debug: Verificar se arquivo existe
-	if _, err := os.Stat("templates/index.html"); os.IsNotExist(err) {
-		fmt.Println("CRÍTICO: Arquivo templates/index.html NÃO encontrado no diretório atual.")
-	} else {
-		fmt.Println("OK: Arquivo templates/index.html encontrado.")
-	}
 
 	// Servir arquivos estáticos (CSS)
 	fs := http.FileServer(http.Dir("./static"))
@@ -49,12 +91,18 @@ func main() {
 }
 
 func handleHome(w http.ResponseWriter, r *http.Request) {
-	// Valores padrão
 	data := PageData{
 		StartDate: "2017-01-01",
 		EndDate:   time.Now().Format("2006-01-02"),
 		Amount:    "100",
 		Frequency: "monthly",
+		Assets:    SupportedAssets,
+		SelectedDCA: map[string]bool{
+			"BTC-USD": true,
+		},
+		SelectedLS: map[string]bool{
+			"BTC-USD": true,
+		},
 	}
 	renderTemplate(w, data)
 }
@@ -69,57 +117,67 @@ func handleSimulate(w http.ResponseWriter, r *http.Request) {
 	endDateStr := r.FormValue("endDate")
 	amountStr := r.FormValue("amount")
 	freqStr := r.FormValue("frequency")
+	
+	r.ParseForm()
+	dcaAssets := r.Form["dca_assets"]
+	lsAssets := r.Form["ls_assets"]
 
-	data := PageData{
-		StartDate: startDateStr,
-		EndDate:   endDateStr,
-		Amount:    amountStr,
-		Frequency: freqStr,
-	}
-
-	// Conversões
+	// Validar inputs
 	startDate, err := time.Parse("2006-01-02", startDateStr)
 	if err != nil {
-		data.Error = "Data de início inválida."
-		renderTemplate(w, data)
+		renderError(w, "Data de início inválida.")
 		return
 	}
-
 	endDate, err := time.Parse("2006-01-02", endDateStr)
 	if err != nil {
-		data.Error = "Data de fim inválida."
-		renderTemplate(w, data)
+		renderError(w, "Data de fim inválida.")
 		return
 	}
-
 	amount, err := strconv.ParseFloat(amountStr, 64)
 	if err != nil {
-		data.Error = "Valor de investimento inválido."
-		renderTemplate(w, data)
+		renderError(w, "Valor inválido.")
 		return
 	}
 
-	// Buscar dados
-	client := finance.NewClient()
+	// Reconstruir mapas de seleção
+	selDca := make(map[string]bool)
+	for _, s := range dcaAssets { selDca[s] = true }
 	
-	btcData, err := client.GetHistoricalData("BTC-USD", startDate, endDate)
-	if err != nil {
-		data.Error = "Erro ao buscar dados do Bitcoin: " + err.Error()
+	selLs := make(map[string]bool)
+	for _, s := range lsAssets { selLs[s] = true }
+
+	data := PageData{
+		StartDate:    startDateStr,
+		EndDate:      endDateStr,
+		Amount:       amountStr,
+		Frequency:    freqStr,
+		Assets:       SupportedAssets,
+		SelectedDCA:  selDca,
+		SelectedLS:   selLs,
+	}
+
+	if len(dcaAssets) == 0 && len(lsAssets) == 0 {
+		data.Error = "Selecione pelo menos um ativo (DCA ou Lump Sum)."
 		renderTemplate(w, data)
 		return
 	}
 
-	goldData, err := client.GetHistoricalData("GC=F", startDate, endDate)
-	if err != nil {
-		fmt.Println("Aviso: Ouro data error:", err)
-	}
+	client := finance.NewClient()
+	var results []calculator.StrategyResult
 
-	sp500Data, err := client.GetHistoricalData("^GSPC", startDate, endDate)
-	if err != nil {
-		fmt.Println("Aviso: SP500 data error:", err)
-	}
+	// Precisamos saber o TotalInvested padrão para o Lump Sum
+	// Para isso, simulamos um DCA em qualquer ativo (ou sem ativo, mas CalculateDCA pede dados)
+	// Vamos usar uma logica: se tiver algum DCA selecionado, usamos o TotalInvested dele.
+	// Se SÓ tiver Lump Sum, precisamos calcular o TotalInvested teórico baseado nas datas.
+	
+	// Para simplificar: Calculamos o tempo de investimento.
+	// Mas a função CalculateDCA já faz isso perfeitamente considerando dias úteis se usarmos dados reais.
+	// Vamos pegar dados de um ativo "base" (BTC) apenas para calcular o calendário de pagamentos, se necessário.
+	// Ou melhor: Calcular para cada ativo selecionado independentemente.
+	
+	var theoreticalTotalInvested float64 = 0
+	calculatedTotal := false
 
-	// Calcular DCA BTC
 	var freq calculator.Frequency
 	switch freqStr {
 	case "daily":
@@ -130,31 +188,83 @@ func handleSimulate(w http.ResponseWriter, r *http.Request) {
 		freq = calculator.Monthly
 	}
 
-	dcaResult := calculator.CalculateDCA(btcData, amount, freq)
-	
-	totalInvested := dcaResult.TotalInvested
-	
-	lumpSumBTC := calculator.CalculateLumpSum(btcData, totalInvested, "Lump Sum Bitcoin")
-	lumpSumGold := calculator.CalculateLumpSum(goldData, totalInvested, "Lump Sum Ouro")
-	lumpSumSP500 := calculator.CalculateLumpSum(sp500Data, totalInvested, "Lump Sum S&P 500")
-
-	// Compilar resultados
-	results := []calculator.StrategyResult{dcaResult, lumpSumBTC, lumpSumGold, lumpSumSP500}
-	data.Results = results
-
-	// Encontrar melhor estratégia
-	bestReturn := -999999.0
-	bestName := ""
-	for _, res := range results {
-		if res.ReturnPercent > bestReturn {
-			bestReturn = res.ReturnPercent
-			bestName = res.StrategyName
+	// Processar DCA Assets
+	for _, symbol := range dcaAssets {
+		histData, err := client.GetHistoricalData(symbol, startDate, endDate)
+		if err != nil {
+			fmt.Printf("Erro dados %s: %v\n", symbol, err)
+			continue
+		}
+		
+		dcaRes := calculator.CalculateDCA(histData, amount, freq)
+		dcaRes.StrategyName = fmt.Sprintf("DCA %s", getAssetName(symbol))
+		results = append(results, dcaRes)
+		
+		if !calculatedTotal {
+			theoreticalTotalInvested = dcaRes.TotalInvested
+			calculatedTotal = true
 		}
 	}
-	data.BestStrategy = bestName
+
+	// Se não tivemos nenhum DCA, precisamos calcular o TotalInvested para o Lump Sum.
+	// Vamos pegar dados do primeiro ativo LS para ter o calendário.
+	if !calculatedTotal && len(lsAssets) > 0 {
+		// Pegar dados do primeiro LS para calcular as datas
+		histData, err := client.GetHistoricalData(lsAssets[0], startDate, endDate)
+		if err == nil {
+			// Simular DCA fantasma só para pegar o valor investido
+			dummy := calculator.CalculateDCA(histData, amount, freq)
+			theoreticalTotalInvested = dummy.TotalInvested
+			calculatedTotal = true
+		}
+	}
+
+	// Processar Lump Sum Assets
+	for _, symbol := range lsAssets {
+		histData, err := client.GetHistoricalData(symbol, startDate, endDate)
+		if err != nil {
+			fmt.Printf("Erro dados %s: %v\n", symbol, err)
+			continue
+		}
+		
+		// Lump Sum assume investir TUDO no início.
+		// Qual valor? O mesmo que seria gasto no DCA (theoreticalTotalInvested).
+		lsRes := calculator.CalculateLumpSum(histData, theoreticalTotalInvested, fmt.Sprintf("Lump Sum %s", getAssetName(symbol)))
+		results = append(results, lsRes)
+	}
+
+	// Ordenar
+	sort.Slice(results, func(i, j int) bool {
+		return results[i].ReturnPercent > results[j].ReturnPercent
+	})
+
+	data.Results = results
+
+	if len(results) > 0 {
+		data.BestStrategy = results[0].StrategyName
+	}
 
 	renderTemplate(w, data)
 }
+
+func renderError(w http.ResponseWriter, msg string) {
+	data := PageData{
+		Error:  msg,
+		Assets: SupportedAssets,
+	}
+	renderTemplate(w, data)
+}
+
+func getAssetName(symbol string) string {
+	for _, a := range SupportedAssets {
+		if a.Symbol == symbol {
+			// Retornar nome curto ou o proprio nome
+			return a.Name
+		}
+	}
+	return symbol
+}
+
 
 func renderTemplate(w http.ResponseWriter, data PageData) {
 	// Como main.go está na raiz, templates/index.html funcionará

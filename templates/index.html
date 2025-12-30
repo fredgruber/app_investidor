@@ -1,21 +1,38 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Simulador DCA Bitcoin vs Tradicional</title>
     <link rel="stylesheet" href="/static/style.css">
 </head>
+
 <body>
     <div class="container">
         <header>
             <h1>Simulador de Investimentos DCA</h1>
-            <div class="subtitle">Compare a estratégia Dollar-Cost Averaging em Bitcoin contra Lump Sum em Ouro e S&P 500</div>
+            <div class="subtitle">Compare a estratégia Dollar-Cost Averaging em Bitcoin contra Lump Sum em Ouro e S&P
+                500</div>
         </header>
 
         <section class="card">
             <form action="/simulate" method="POST">
                 <div class="form-grid">
+                    <div class="form-group">
+                        <label for="amount">Valor por Período (USD)</label>
+                        <input type="number" id="amount" name="amount" value="{{.Amount}}" min="10" required>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="frequency">Frequência</label>
+                        <select id="frequency" name="frequency">
+                            <option value="daily" {{if eq .Frequency "daily" }}selected{{end}}>Diário</option>
+                            <option value="weekly" {{if eq .Frequency "weekly" }}selected{{end}}>Semanal</option>
+                            <option value="monthly" {{if eq .Frequency "monthly" }}selected{{end}}>Mensal</option>
+                        </select>
+                    </div>
+
                     <div class="form-group">
                         <label for="startDate">Data de Início</label>
                         <input type="date" id="startDate" name="startDate" value="{{.StartDate}}" required>
@@ -24,20 +41,59 @@
                         <label for="endDate">Data Final</label>
                         <input type="date" id="endDate" name="endDate" value="{{.EndDate}}" required>
                     </div>
-                    <div class="form-group">
-                        <label for="amount">Valor por Período (USD)</label>
-                        <input type="number" id="amount" name="amount" value="{{.Amount}}" min="10" required>
+                </div>
+
+                <div class="assets-section">
+                    <div
+                        style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+                        <h3>Seleção de Ativos</h3>
+                        <div class="selection-controls">
+                            <button type="button" onclick="toggleColumn('dca_assets', true)" class="btn-small">Todos
+                                DCA</button>
+                            <button type="button" onclick="toggleColumn('ls_assets', true)" class="btn-small">Todos
+                                LS</button>
+                            <button type="button" onclick="clearAll()" class="btn-small outline">Limpar Tudo</button>
+                        </div>
                     </div>
-                    <div class="form-group">
-                        <label for="frequency">Frequência</label>
-                        <select id="frequency" name="frequency">
-                            <option value="daily" {{if eq .Frequency "daily"}}selected{{end}}>Diário</option>
-                            <option value="weekly" {{if eq .Frequency "weekly"}}selected{{end}}>Semanal</option>
-                            <option value="monthly" {{if eq .Frequency "monthly"}}selected{{end}}>Mensal</option>
-                        </select>
+
+                    <div class="assets-table-container">
+                        <table class="assets-selection-table">
+                            <thead>
+                                <tr>
+                                    <th>Ativo</th>
+                                    <th class="text-center" title="Comprar recorrente">DCA</th>
+                                    <th class="text-center" title="Investimento único inicial">Lump Sum</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {{range .Assets}}
+                                <tr>
+                                    <td>
+                                        <span class="asset-name-row">{{.Name}}</span>
+                                        <span class="asset-cat">{{.Category}}</span>
+                                    </td>
+                                    <td class="text-center">
+                                        <label class="switch">
+                                            <input type="checkbox" name="dca_assets" value="{{.Symbol}}" {{if index
+                                                $.SelectedDCA .Symbol}}checked{{end}}>
+                                            <span class="slider round"></span>
+                                        </label>
+                                    </td>
+                                    <td class="text-center">
+                                        <label class="switch">
+                                            <input type="checkbox" name="ls_assets" value="{{.Symbol}}" {{if index
+                                                $.SelectedLS .Symbol}}checked{{end}}>
+                                            <span class="slider round"></span>
+                                        </label>
+                                    </td>
+                                </tr>
+                                {{end}}
+                            </tbody>
+                        </table>
                     </div>
                 </div>
-                <button type="submit">Simular Cenário</button>
+
+                <button type="submit" style="margin-top: 1.5rem;">Simular Comparação</button>
             </form>
         </section>
 
@@ -66,16 +122,16 @@
                         <td>{{.StrategyName}}</td>
                         <td>${{printf "%.2f" .TotalInvested}}</td>
                         <td>${{printf "%.2f" .FinalValue}}</td>
-                        <td class="{{if ge .ReturnPercent 0.0}}positive{{else}}negative{{end}}">{{printf "%.2f" .ReturnPercent}}%</td>
+                        <td class="{{if ge .ReturnPercent 0.0}}positive{{else}}negative{{end}}">{{printf "%.2f"
+                            .ReturnPercent}}%</td>
                         <td>
-                            <!-- Cálculo simples de vantagem visual -->
-                             - 
+                            <!-- Vantagem visual calculada no backend no futuro? -->
                         </td>
                     </tr>
                     {{end}}
                 </tbody>
             </table>
-            
+
             <div class="best-strategy">
                 🏆 Melhor Estratégia: {{.BestStrategy}}
             </div>
@@ -84,15 +140,34 @@
         <section class="insights">
             <div class="insight-card">
                 <h3>💡 Por que DCA?</h3>
-                <p>O Dollar-Cost Averaging (DCA) suaviza a entrada no mercado. Ao comprar quantias fixas regularmente, você compra mais Bitcoin quando o preço cai e menos quando sobe, reduzindo o preço médio por moeda e eliminando o estresse de tentar acertar o "fundo" do mercado (timing).</p>
+                <p>O Dollar-Cost Averaging (DCA) suaviza a entrada no mercado. Ao comprar quantias fixas regularmente,
+                    você compra mais Bitcoin quando o preço cai e menos quando sobe, reduzindo o preço médio por moeda e
+                    eliminando o estresse de tentar acertar o "fundo" do mercado (timing).</p>
             </div>
-            
+
             <div class="insight-card">
                 <h3>📊 Volatilidade vs Estabilidade</h3>
-                <p>O Bitcoin tende a ter alta volatilidade, o que pode gerar retornos massivos ou quedas bruscas. O Ouro (XAU) é historicamente uma reserva de valor estável. O S&P 500 representa o crescimento da economia americana. Comparar os três ajuda a entender o perfil de risco-retorno.</p>
+                <p>O Bitcoin tende a ter alta volatilidade. A Renda Fixa Brasileira oferece segurança nominal, mas sofre
+                    com a desvalorização cambial (Dólar). Ações Tech americanas oferecem alto crescimento. Comparar
+                    todos ajuda a diversificar.</p>
             </div>
         </section>
         {{end}}
     </div>
+
+    <script>
+        function toggleColumn(name, checked) {
+            const checkboxes = document.getElementsByName(name);
+            for (let i = 0; i < checkboxes.length; i++) {
+                checkboxes[i].checked = checked;
+            }
+        }
+
+        function clearAll() {
+            toggleColumn('dca_assets', false);
+            toggleColumn('ls_assets', false);
+        }
+    </script>
 </body>
+
 </html>

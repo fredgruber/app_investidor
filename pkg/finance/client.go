@@ -3,6 +3,7 @@ package finance
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"net/http"
 	"time"
 )
@@ -38,6 +39,16 @@ func NewClient() *Client {
 
 // GetHistoricalData busca dados históricos do Yahoo Finance via Chart API JSON
 func (c *Client) GetHistoricalData(symbol string, startDate, endDate time.Time) ([]Quote, error) {
+	// Lógica para Ativos Sintéticos de Renda Fixa Brasileira
+	// Ex: FIXED-BRL-6 -> Renda Fixa 6% a.a. em BRL convertida para USD
+	if len(symbol) > 10 && symbol[:10] == "FIXED-BRL-" {
+		rateStr := symbol[10:]
+		var annualRate float64
+		fmt.Sscanf(rateStr, "%f", &annualRate)
+		
+		return c.getSyntheticFixedIncomeData(annualRate, startDate, endDate)
+	}
+
 	period1 := startDate.Unix()
 	period2 := endDate.Unix()
 
@@ -102,4 +113,66 @@ func (c *Client) GetHistoricalData(symbol string, startDate, endDate time.Time) 
 	}
 
 	return quotes, nil
+}
+
+// getSyntheticFixedIncomeData gera dados para um ativo de renda fixa em BRL convertido para USD
+func (c *Client) getSyntheticFixedIncomeData(annualRatePercent float64, startDate, endDate time.Time) ([]Quote, error) {
+	// 1. Obter histórico do Câmbio (USD/BRL) -> BRL=X
+	// BRL=X significa "Quantos Reais valem 1 Dólar"
+	exchangeQuotes, err := c.GetHistoricalData("BRL=X", startDate, endDate)
+	if err != nil {
+		return nil, fmt.Errorf("erro ao obter câmbio para cálculo sintético: %v", err)
+	}
+
+	if len(exchangeQuotes) == 0 {
+		return nil, fmt.Errorf("sem dados de câmbio para o período")
+	}
+
+	// 2. Calcular taxa diária
+	// Taxa Anual = (1 + Taxa Diária ^ 252) ou 365. Vamos usar juros compostos simples base 365 para facilitar (crypto roda 24/7).
+	// dailyRate = (1 + annualRate)^(1/365) - 1
+	dailyRate := pow(1+annualRatePercent/100.0, 1.0/365.0) - 1.0
+
+	var quotes []Quote
+	
+	// Valor inicial arbitrário em BRL (ex: 100). O valor absoluto não importa para o retorno %, 
+	// mas para o DCA/LumpSum importa a série de preços.
+	// Vamos criar um "índice" que começa em 100.
+	
+	// Precisamos alinhar as datas. Vamos iterar sobre as datas do câmbio.
+	// Assumimos que o rendimento corre todo dia que tem cotação de câmbio.
+	
+	firstDate := exchangeQuotes[0].Date
+	
+	for _, eq := range exchangeQuotes {
+		// Dias passados desde o início da série
+		daysPassed := eq.Date.Sub(firstDate).Hours() / 24.0
+		if daysPassed < 0 {
+			daysPassed = 0
+		}
+		
+		// Rendimento acumulado exato até esta data
+		// Value = Initial * (1+Daily)^Days
+		accumulatedBRL := 100.0 * pow(1+dailyRate, daysPassed)
+		
+		// Converter para USD
+		// Se 1 USD = X BRL, então Valor USD = Valor BRL / X
+		rateBRLUSD := eq.Close
+		if rateBRLUSD == 0 {
+			continue
+		}
+		
+		valueUSD := accumulatedBRL / rateBRLUSD
+		
+		quotes = append(quotes, Quote{
+			Date:  eq.Date,
+			Close: valueUSD,
+		})
+	}
+
+	return quotes, nil
+}
+
+func pow(x, y float64) float64 {
+	return math.Pow(x, y)
 }
