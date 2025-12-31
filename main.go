@@ -59,6 +59,7 @@ type PageData struct {
 	StartDate     string
 	EndDate       string
 	Amount        string
+	InitialAmount string
 	Frequency     string
 	Assets        []AssetOption
 	
@@ -70,6 +71,8 @@ type PageData struct {
 	CustomTicker  string
 	CustomDCA     bool
 	CustomLS      bool
+
+	UseNative     bool // Novo campo
 
 	Results       []calculator.StrategyResult
 	BestStrategy  string
@@ -121,6 +124,7 @@ func handleSimulate(w http.ResponseWriter, r *http.Request) {
 	startDateStr := r.FormValue("startDate")
 	endDateStr := r.FormValue("endDate")
 	amountStr := r.FormValue("amount")
+	initialAmountStr := r.FormValue("initial_amount")
 	freqStr := r.FormValue("frequency")
 	
 	r.ParseForm()
@@ -130,6 +134,8 @@ func handleSimulate(w http.ResponseWriter, r *http.Request) {
 	customTicker := r.FormValue("custom_ticker")
 	customDCA := r.FormValue("custom_dca") == "on"
 	customLS := r.FormValue("custom_ls") == "on"
+	
+	useNative := r.FormValue("use_native") == "true"
 	
 	// Adicionar ativo customizado às listas se selecionado
 	if customTicker != "" {
@@ -157,8 +163,17 @@ func handleSimulate(w http.ResponseWriter, r *http.Request) {
 	}
 	amount, err := strconv.ParseFloat(amountStr, 64)
 	if err != nil {
-		renderError(w, "Valor inválido.")
+		renderError(w, "Valor recorrente inválido.")
 		return
+	}
+	
+	var initialAmount float64
+	if initialAmountStr != "" {
+		initialAmount, err = strconv.ParseFloat(initialAmountStr, 64)
+		if err != nil {
+			renderError(w, "Valor inicial inválido.")
+			return
+		}
 	}
 
 	// Reconstruir mapas de seleção
@@ -172,6 +187,7 @@ func handleSimulate(w http.ResponseWriter, r *http.Request) {
 		StartDate:    startDateStr,
 		EndDate:      endDateStr,
 		Amount:       amountStr,
+		InitialAmount: initialAmountStr,
 		Frequency:    freqStr,
 		Assets:       SupportedAssets,
 		SelectedDCA:  selDca,
@@ -179,6 +195,7 @@ func handleSimulate(w http.ResponseWriter, r *http.Request) {
 		CustomTicker: customTicker,
 		CustomDCA:    customDCA,
 		CustomLS:     customLS,
+		UseNative:    useNative,
 	}
 
 	if len(dcaAssets) == 0 && len(lsAssets) == 0 {
@@ -215,14 +232,19 @@ func handleSimulate(w http.ResponseWriter, r *http.Request) {
 
 	// Processar DCA Assets
 	for _, symbol := range dcaAssets {
-		histData, err := client.GetHistoricalData(symbol, startDate, endDate)
+		histData, err := client.GetHistoricalData(symbol, startDate, endDate, useNative)
 		if err != nil {
 			fmt.Printf("Erro dados %s: %v\n", symbol, err)
 			continue
 		}
 		
-		dcaRes := calculator.CalculateDCA(histData, amount, freq)
+		dcaRes := calculator.CalculateDCA(histData, initialAmount, amount, freq)
 		dcaRes.StrategyName = fmt.Sprintf("DCA %s", getAssetName(symbol))
+		if initialAmount > 0 {
+			// Se tem aporte inicial, sobrescreve o nome que veio do calculador para incluir o nome do ativo
+			dcaRes.StrategyName = fmt.Sprintf("%s (%s)", dcaRes.StrategyName, getAssetName(symbol))
+		}
+		
 		results = append(results, dcaRes)
 		
 		if !calculatedTotal {
@@ -235,10 +257,10 @@ func handleSimulate(w http.ResponseWriter, r *http.Request) {
 	// Vamos pegar dados do primeiro ativo LS para ter o calendário.
 	if !calculatedTotal && len(lsAssets) > 0 {
 		// Pegar dados do primeiro LS para calcular as datas
-		histData, err := client.GetHistoricalData(lsAssets[0], startDate, endDate)
+		histData, err := client.GetHistoricalData(lsAssets[0], startDate, endDate, useNative)
 		if err == nil {
 			// Simular DCA fantasma só para pegar o valor investido
-			dummy := calculator.CalculateDCA(histData, amount, freq)
+			dummy := calculator.CalculateDCA(histData, initialAmount, amount, freq)
 			theoreticalTotalInvested = dummy.TotalInvested
 			calculatedTotal = true
 		}
@@ -246,7 +268,7 @@ func handleSimulate(w http.ResponseWriter, r *http.Request) {
 
 	// Processar Lump Sum Assets
 	for _, symbol := range lsAssets {
-		histData, err := client.GetHistoricalData(symbol, startDate, endDate)
+		histData, err := client.GetHistoricalData(symbol, startDate, endDate, useNative)
 		if err != nil {
 			fmt.Printf("Erro dados %s: %v\n", symbol, err)
 			continue

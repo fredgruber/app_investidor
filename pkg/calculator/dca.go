@@ -2,6 +2,7 @@ package calculator
 
 import (
 	"dca-platform/pkg/finance"
+	"fmt"
 	"time"
 )
 
@@ -24,7 +25,7 @@ const (
 )
 
 // CalculateDCA calcula o retorno de uma estratégia DCA
-func CalculateDCA(quotes []finance.Quote, amountPerPeriod float64, freq Frequency) StrategyResult {
+func CalculateDCA(quotes []finance.Quote, initialAmount float64, amountPerPeriod float64, freq Frequency) StrategyResult {
 	var totalInvested float64
 	var totalAccumulated float64
 	
@@ -32,39 +33,49 @@ func CalculateDCA(quotes []finance.Quote, amountPerPeriod float64, freq Frequenc
 		return StrategyResult{StrategyName: "DCA Bitcoin (Sem dados)"}
 	}
 
-	lastPurchaseDate := time.Time{}
-
-	for _, q := range quotes {
-		shouldBuy := false
-
-		if lastPurchaseDate.IsZero() {
-			shouldBuy = true
-		} else {
-			switch freq {
-			case Daily:
-				// Compra todo dia que tiver dados
-				shouldBuy = true
-			case Weekly:
-				// Se passou 7 dias ou mais desde a ultima compra
-				if q.Date.Sub(lastPurchaseDate).Hours() >= 24*7 {
-					shouldBuy = true
-				}
-			case Monthly:
-				// Se mudou o mês
-				if q.Date.Month() != lastPurchaseDate.Month() || q.Date.Year() != lastPurchaseDate.Year() {
-					shouldBuy = true
-				}
-			}
-		}
-
-		if shouldBuy {
-			bought := amountPerPeriod / q.Close
-			totalAccumulated += bought
-			totalInvested += amountPerPeriod
-			lastPurchaseDate = q.Date
-		}
+	// Compra Inicial (Lump Sum parcial)
+	if initialAmount > 0 {
+		bought := initialAmount / quotes[0].Close
+		totalAccumulated += bought
+		totalInvested += initialAmount
 	}
 
+	lastPurchaseDate := time.Time{}
+
+	// Compra Recorrente (DCA)
+	if amountPerPeriod > 0 {
+		for _, q := range quotes {
+			shouldBuy := false
+	
+			if lastPurchaseDate.IsZero() {
+				shouldBuy = true
+			} else {
+				switch freq {
+				case Daily:
+					// Compra todo dia que tiver dados
+					shouldBuy = true
+				case Weekly:
+					// Se passou 7 dias ou mais desde a ultima compra
+					if q.Date.Sub(lastPurchaseDate).Hours() >= 24*7 {
+						shouldBuy = true
+					}
+				case Monthly:
+					// Se mudou o mês
+					if q.Date.Month() != lastPurchaseDate.Month() || q.Date.Year() != lastPurchaseDate.Year() {
+						shouldBuy = true
+					}
+				}
+			}
+	
+			if shouldBuy {
+				bought := amountPerPeriod / q.Close
+				totalAccumulated += bought
+				totalInvested += amountPerPeriod
+				lastPurchaseDate = q.Date
+			}
+		}
+	}
+	
 	// Valor final = acumulado * ultimo preço
 	lastPrice := quotes[len(quotes)-1].Close
 	finalValue := totalAccumulated * lastPrice
@@ -73,9 +84,16 @@ func CalculateDCA(quotes []finance.Quote, amountPerPeriod float64, freq Frequenc
 	if totalInvested > 0 {
 		ret = (finalValue - totalInvested) / totalInvested * 100
 	}
+	
+	name := "DCA " + string(freq)
+	if initialAmount > 0 && amountPerPeriod == 0 {
+		name = "Investimento Único (Lump Sum)"
+	} else if initialAmount > 0 {
+		name = fmt.Sprintf("Híbrido (Ini: $%.0f + DCA)", initialAmount)
+	}
 
 	return StrategyResult{
-		StrategyName:     "DCA Bitcoin (" + string(freq) + ")",
+		StrategyName:     name,
 		TotalInvested:    totalInvested,
 		FinalValue:       finalValue,
 		ReturnPercent:    ret,

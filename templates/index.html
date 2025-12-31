@@ -20,8 +20,13 @@
             <form action="/simulate" method="POST">
                 <div class="form-grid">
                     <div class="form-group">
-                        <label for="amount">Valor por Período (USD)</label>
-                        <input type="number" id="amount" name="amount" value="{{.Amount}}" min="10" required>
+                        <label for="initial_amount">Aporte Inicial (USD)</label>
+                        <input type="number" id="initial_amount" name="initial_amount" value="{{.InitialAmount}}"
+                            min="0" placeholder="0">
+                    </div>
+                    <div class="form-group">
+                        <label for="amount">Aporte Recorrente (USD)</label>
+                        <input type="number" id="amount" name="amount" value="{{.Amount}}" min="0" required>
                     </div>
 
                     <div class="form-group">
@@ -33,13 +38,25 @@
                         </select>
                     </div>
 
-                    <div class="form-group">
-                        <label for="startDate">Data de Início</label>
-                        <input type="date" id="startDate" name="startDate" value="{{.StartDate}}" required>
+                    <div style="grid-column: 1 / -1; display: flex; gap: 1.5rem; flex-wrap: wrap;">
+                        <div class="form-group" style="flex: 1; min-width: 150px;">
+                            <label for="startDate">Data de Início</label>
+                            <input type="date" id="startDate" name="startDate" value="{{.StartDate}}" required>
+                        </div>
+                        <div class="form-group" style="flex: 1; min-width: 150px;">
+                            <label for="endDate">Data Final</label>
+                            <input type="date" id="endDate" name="endDate" value="{{.EndDate}}" required>
+                        </div>
                     </div>
-                    <div class="form-group">
-                        <label for="endDate">Data Final</label>
-                        <input type="date" id="endDate" name="endDate" value="{{.EndDate}}" required>
+
+                    <div class="form-group" style="grid-column: 1 / -1;">
+                        <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                            <input type="checkbox" name="use_native" value="true" {{if .UseNative}}checked{{end}}>
+                            <span>Ignorar Câmbio (Moeda Original)</span>
+                        </label>
+                        <small style="color: #8b949e; display: block; margin-top: 4px; font-size: 0.8em;">
+                            Útil para ver o retorno nominal de Randa Fixa BR sem converter para Dólar.
+                        </small>
                     </div>
                 </div>
 

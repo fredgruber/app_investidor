@@ -38,7 +38,7 @@ func NewClient() *Client {
 }
 
 // GetHistoricalData busca dados históricos do Yahoo Finance via Chart API JSON
-func (c *Client) GetHistoricalData(symbol string, startDate, endDate time.Time) ([]Quote, error) {
+func (c *Client) GetHistoricalData(symbol string, startDate, endDate time.Time, useNative bool) ([]Quote, error) {
 	// Lógica para Ativos Sintéticos de Renda Fixa Brasileira
 	// Ex: FIXED-BRL-6 -> Renda Fixa 6% a.a. em BRL convertida para USD
 	if len(symbol) > 10 && symbol[:10] == "FIXED-BRL-" {
@@ -46,12 +46,12 @@ func (c *Client) GetHistoricalData(symbol string, startDate, endDate time.Time) 
 		var annualRate float64
 		fmt.Sscanf(rateStr, "%f", &annualRate)
 		
-		return c.getSyntheticFixedIncomeData(annualRate, startDate, endDate)
+		return c.getSyntheticFixedIncomeData(annualRate, startDate, endDate, useNative)
 	}
 
 	// Lógica para Ações Brasileiras (.SA) - Conversão automática para USD
 	if len(symbol) > 3 && symbol[len(symbol)-3:] == ".SA" {
-		return c.getBrazilianStockInUSD(symbol, startDate, endDate)
+		return c.getBrazilianStockInUSD(symbol, startDate, endDate, useNative)
 	}
 
 	period1 := startDate.Unix()
@@ -66,17 +66,7 @@ func (c *Client) GetHistoricalData(symbol string, startDate, endDate time.Time) 
 
 
 // getBrazilianStockInUSD busca a ação em BRL e converte para USD usando o câmbio do dia
-func (c *Client) getBrazilianStockInUSD(symbol string, startDate, endDate time.Time) ([]Quote, error) {
-	// 1. Buscar dados da ação em Reais (BRL)
-	// Precisamos usar o método "raw" (sem recursão para .SA) ou chamar a lógica interna.
-	// Vamos refatorar levemente: criar um metodo interno "fetchRaw" ou apenas chamar GetHistoricalData ignorando o sufixo?
-	// Não, isso causaria loop infinito se chamar GetHistoricalData("PETR4.SA").
-	// Solução: Criar função privada `fetchYahooRaw` com a lógica de HTTP request.
-	
-	// Como não quero refatorar tudo agora, vou duplicar a chamada raw aqui ou usar um "hack" de sufixo? 
-	// Melhor: extrair a lógica HTTP para function auxiliar.
-	// Mas para ser menos intrusivo no replace_file_content, vou implementar a chamada raw aqui dentro.
-	
+func (c *Client) getBrazilianStockInUSD(symbol string, startDate, endDate time.Time, useNative bool) ([]Quote, error) {
 	period1 := startDate.Unix()
 	period2 := endDate.Unix()
 	url := fmt.Sprintf("https://query1.finance.yahoo.com/v8/finance/chart/%s?period1=%d&period2=%d&interval=1d", symbol, period1, period2)
@@ -85,10 +75,17 @@ func (c *Client) getBrazilianStockInUSD(symbol string, startDate, endDate time.T
 	if err != nil {
 		return nil, fmt.Errorf("erro ao buscar %s original: %v", symbol, err)
 	}
+
+	// Se o usuário quer moeda original, retornamos direto o preço em Reais
+	if useNative {
+		return stockQuotes, nil
+	}
 	
 	// 2. Buscar Câmbio (BRL=X)
-	exchangeQuotes, err := c.GetHistoricalData("BRL=X", startDate, endDate)
+	exchangeQuotes, err := c.GetHistoricalData("BRL=X", startDate, endDate, false) // recursão evita loop pq simbolo != .SA e FIXED
 	if err != nil {
+		// Fallback ou erro?
+		// Vamos retornar erro, pois o usuário quer comparacao em USD
 		return nil, fmt.Errorf("erro ao obter câmbio: %v", err)
 	}
 
@@ -106,8 +103,6 @@ func (c *Client) getBrazilianStockInUSD(symbol string, startDate, endDate time.T
 		rate, ok := exchangeMap[key]
 		
 		if !ok || rate == 0 {
-			// Se não tem cambio no dia (feriado USA vs BR?), tente usar o do dia anterior?
-			// Por simplicidade, pular
 			continue
 		}
 		
@@ -170,10 +165,11 @@ func (c *Client) fetchRawQuotes(url string) ([]Quote, error) {
 }
 
 // getSyntheticFixedIncomeData gera dados para um ativo de renda fixa em BRL convertido para USD
-func (c *Client) getSyntheticFixedIncomeData(annualRatePercent float64, startDate, endDate time.Time) ([]Quote, error) {
+func (c *Client) getSyntheticFixedIncomeData(annualRatePercent float64, startDate, endDate time.Time, useNative bool) ([]Quote, error) {
 	// 1. Obter histórico do Câmbio (USD/BRL) -> BRL=X
-	// BRL=X significa "Quantos Reais valem 1 Dólar"
-	exchangeQuotes, err := c.GetHistoricalData("BRL=X", startDate, endDate)
+	// Precisamos das datas para saber quais dias de "mercado" existem, mesmo se useNative=true.
+	// Usar BRL=X como proxy de dias úteis/mercado é razoável.
+	exchangeQuotes, err := c.GetHistoricalData("BRL=X", startDate, endDate, false)
 	if err != nil {
 		return nil, fmt.Errorf("erro ao obter câmbio para cálculo sintético: %v", err)
 	}
@@ -189,13 +185,7 @@ func (c *Client) getSyntheticFixedIncomeData(annualRatePercent float64, startDat
 
 	var quotes []Quote
 	
-	// Valor inicial arbitrário em BRL (ex: 100). O valor absoluto não importa para o retorno %, 
-	// mas para o DCA/LumpSum importa a série de preços.
-	// Vamos criar um "índice" que começa em 100.
-	
-	// Precisamos alinhar as datas. Vamos iterar sobre as datas do câmbio.
-	// Assumimos que o rendimento corre todo dia que tem cotação de câmbio.
-	
+	// Valor inicial arbitrário em BRL (ex: 100).
 	firstDate := exchangeQuotes[0].Date
 	
 	for _, eq := range exchangeQuotes {
@@ -209,18 +199,21 @@ func (c *Client) getSyntheticFixedIncomeData(annualRatePercent float64, startDat
 		// Value = Initial * (1+Daily)^Days
 		accumulatedBRL := 100.0 * pow(1+dailyRate, daysPassed)
 		
-		// Converter para USD
-		// Se 1 USD = X BRL, então Valor USD = Valor BRL / X
-		rateBRLUSD := eq.Close
-		if rateBRLUSD == 0 {
-			continue
+		var finalValue float64
+		if useNative {
+			finalValue = accumulatedBRL
+		} else {
+			// Converter para USD
+			rateBRLUSD := eq.Close
+			if rateBRLUSD == 0 {
+				continue
+			}
+			finalValue = accumulatedBRL / rateBRLUSD
 		}
-		
-		valueUSD := accumulatedBRL / rateBRLUSD
 		
 		quotes = append(quotes, Quote{
 			Date:  eq.Date,
-			Close: valueUSD,
+			Close: finalValue,
 		})
 	}
 
