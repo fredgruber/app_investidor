@@ -272,3 +272,63 @@ tr:hover {
     text-align: center;
     font-weight: bold;
 }
+
+/* CSS for Tag Input Component */
+.tag-input-container {
+    background: #0d1117;
+    border: 1px solid var(--border-color);
+    padding: 5px;
+    border-radius: 6px;
+    width: 100%;
+    box-sizing: border-box;
+}
+
+.tags-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+    margin-bottom: 5px;
+}
+
+.tag {
+    background: #238636;
+    color: white;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 0.9em;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+}
+
+.tag .remove-tag {
+    cursor: pointer;
+    font-weight: bold;
+    color: #ffcccc;
+}
+
+.tag .remove-tag:hover {
+    color: white;
+}
+
+#tag-input {
+    flex-grow: 1;
+    border: none;
+    outline: none;
+    background: transparent;
+    color: var(--text-color);
+    padding: 5px;
+    min-width: 100px;
+}
+
+/* Overwrite specific button style if needed for + button */
+.btn-small {
+    padding: 0.3rem 0.8rem;
+    font-size: 0.9rem;
+    width: auto;
+    background: var(--border-color);
+}
+
+.btn-small:hover {
+    background: #50565d;
+}

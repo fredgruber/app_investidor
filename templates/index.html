@@ -108,12 +108,25 @@
                                 <!-- Linha Personalizada -->
                                 <tr style="background: rgba(255, 255, 255, 0.05); border-top: 2px solid #30363d;">
                                     <td>
-                                        <label for="custom_ticker"
-                                            style="display:block; font-size: 0.8em; color: #8b949e; margin-bottom: 2px;">Outro
-                                            Ativo (ex: WEGE3.SA)</label>
-                                        <input type="text" id="custom_ticker" name="custom_ticker"
-                                            value="{{.CustomTicker}}" placeholder="Ticker (Yahoo)"
-                                            style="width: 100%; padding: 5px;">
+                                        <label
+                                            style="display:block; font-size: 0.8em; color: #8b949e; margin-bottom: 2px;">
+                                            Outros Ativos (ex: WEGE3.SA)
+                                        </label>
+
+                                        <!-- Container do Widget de Tags -->
+                                        <div class="tag-input-container">
+                                            <div id="tags-list" class="tags-list">
+                                                <!-- Tags serão inseridas aqui via JS -->
+                                            </div>
+                                            <div style="display: flex; gap: 5px;">
+                                                <input type="text" id="tag-input" placeholder="Adicionar ativo..."
+                                                    onkeydown="handleTagInputKey(event)">
+                                                <button type="button" onclick="addTag()" class="btn-small"
+                                                    style="width: auto; padding: 0.2rem 0.8rem;">+</button>
+                                            </div>
+                                            <!-- Container escondido para os inputs do form -->
+                                            <div id="hidden-inputs"></div>
+                                        </div>
                                     </td>
                                     <td class="text-center">
                                         <label class="switch">
@@ -196,6 +209,9 @@
     </div>
 
     <script>
+        // Dados iniciais vindos do servidor
+        const initialCustomTickers = {{.CustomTickersJSON }};
+
         function toggleColumn(name, checked) {
             const checkboxes = document.getElementsByName(name);
             for (let i = 0; i < checkboxes.length; i++) {
@@ -206,6 +222,63 @@
         function clearAll() {
             toggleColumn('dca_assets', false);
             toggleColumn('ls_assets', false);
+        }
+
+        // --- Tag Input Logic ---
+        const tagsList = document.getElementById('tags-list');
+        const tagInput = document.getElementById('tag-input');
+        const hiddenInputs = document.getElementById('hidden-inputs');
+        let tags = [];
+
+        function renderTags() {
+            tagsList.innerHTML = '';
+            hiddenInputs.innerHTML = '';
+
+            tags.forEach((tag, index) => {
+                // Render Visual Tag
+                const tagEl = document.createElement('span');
+                tagEl.className = 'tag';
+                tagEl.innerHTML = `
+                    ${tag}
+                    <span class="remove-tag" onclick="removeTag(${index})">&times;</span>
+                `;
+                tagsList.appendChild(tagEl);
+
+                // Render Hidden Input
+                const inputEl = document.createElement('input');
+                inputEl.type = 'hidden';
+                inputEl.name = 'custom_ticker';
+                inputEl.value = tag;
+                hiddenInputs.appendChild(inputEl);
+            });
+        }
+
+        function addTag() {
+            const val = tagInput.value.trim().toUpperCase();
+            if (val && !tags.includes(val)) {
+                tags.push(val);
+                tagInput.value = '';
+                renderTags();
+            }
+            tagInput.focus();
+        }
+
+        function removeTag(index) {
+            tags.splice(index, 1);
+            renderTags();
+        }
+
+        function handleTagInputKey(e) {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                addTag();
+            }
+        }
+
+        // Inititalize
+        if (initialCustomTickers && Array.isArray(initialCustomTickers)) {
+            tags = initialCustomTickers;
+            renderTags();
         }
     </script>
 </body>

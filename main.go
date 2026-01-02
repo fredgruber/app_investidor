@@ -3,6 +3,7 @@ package main
 import (
 	"dca-platform/pkg/calculator"
 	"dca-platform/pkg/finance"
+	"encoding/json"
 	"fmt"
 	"html/template"
 	"log"
@@ -68,9 +69,10 @@ type PageData struct {
 	SelectedLS    map[string]bool
 	
 	// Estado do Custom Asset
-	CustomTicker  string
-	CustomDCA     bool
-	CustomLS      bool
+	CustomTickers     []string
+	CustomTickersJSON template.JS // Para passar para o JS do frontend
+	CustomDCA         bool
+	CustomLS          bool
 
 	UseNative     bool // Novo campo
 
@@ -131,22 +133,22 @@ func handleSimulate(w http.ResponseWriter, r *http.Request) {
 	dcaAssets := r.Form["dca_assets"]
 	lsAssets := r.Form["ls_assets"]
 	
-	customTicker := r.FormValue("custom_ticker")
+	// Agora custom_ticker pode virar múltiplos valores
+	customTickers := r.Form["custom_ticker"]
+	
 	customDCA := r.FormValue("custom_dca") == "on"
 	customLS := r.FormValue("custom_ls") == "on"
 	
 	useNative := r.FormValue("use_native") == "true"
 	
-	// Adicionar ativo customizado às listas se selecionado
-	if customTicker != "" {
-		// Normalizar ticker (uppercase)
-		// Mas Go não tem strings.ToUpper fácil sem import "strings", vou deixar como está ou adicionar import
-		// Assumindo usuário digita certo ou Yahoo resolve.
+	// Adicionar ativos customizados às listas se selecionado
+	for _, ticker := range customTickers {
+		if ticker == "" { continue }
 		if customDCA {
-			dcaAssets = append(dcaAssets, customTicker)
+			dcaAssets = append(dcaAssets, ticker)
 		}
 		if customLS {
-			lsAssets = append(lsAssets, customTicker)
+			lsAssets = append(lsAssets, ticker)
 		}
 	}
 
@@ -183,6 +185,9 @@ func handleSimulate(w http.ResponseWriter, r *http.Request) {
 	selLs := make(map[string]bool)
 	for _, s := range lsAssets { selLs[s] = true }
 
+	// Serializar para JS
+	jsonBytes, _ := json.Marshal(customTickers)
+	
 	data := PageData{
 		StartDate:    startDateStr,
 		EndDate:      endDateStr,
@@ -192,7 +197,8 @@ func handleSimulate(w http.ResponseWriter, r *http.Request) {
 		Assets:       SupportedAssets,
 		SelectedDCA:  selDca,
 		SelectedLS:   selLs,
-		CustomTicker: customTicker,
+		CustomTickers: customTickers,
+		CustomTickersJSON: template.JS(jsonBytes),
 		CustomDCA:    customDCA,
 		CustomLS:     customLS,
 		UseNative:    useNative,
