@@ -56,6 +56,13 @@ var SupportedAssets = []AssetOption{
 	{"META", "Meta (Facebook)", "EUA"},
 }
 
+type COEConfig struct {
+	Asset         string
+	Protected     bool
+	Participation string // Keeping as string to preserve user input format
+	Cap           string // Keeping as string
+}
+
 type PageData struct {
 	StartDate     string
 	EndDate       string
@@ -75,6 +82,11 @@ type PageData struct {
 	CustomLS          bool
 
 	UseNative     bool // Novo campo
+	
+	// Configurações COE
+	ShowCOE          bool
+	COEs             []COEConfig
+	COEsJSON         template.JS
 
 	Results       []calculator.StrategyResult
 	BestStrategy  string
@@ -141,6 +153,37 @@ func handleSimulate(w http.ResponseWriter, r *http.Request) {
 	
 	useNative := r.FormValue("use_native") == "true"
 	
+	// COE Parsing - Múltiplos
+	coeEnabled := r.FormValue("coe_enabled") == "on"
+	
+	// Recuperar slices do form
+	coeAssets := r.Form["coe_asset"]
+	coeProtectedList := r.Form["coe_protected"]
+	coePartList := r.Form["coe_participation"]
+	coeCapList := r.Form["coe_cap"]
+	
+	var coes []COEConfig
+	
+	// Assumindo que o JS garante sincronia de indices via hidden inputs
+	if coeEnabled && len(coeAssets) > 0 {
+		for i, asset := range coeAssets {
+			if i >= len(coeProtectedList) || i >= len(coePartList) || i >= len(coeCapList) {
+				continue
+			}
+			
+			prot := coeProtectedList[i] == "true"
+			part := coePartList[i]
+			capVal := coeCapList[i]
+			
+			coes = append(coes, COEConfig{
+				Asset:         asset,
+				Protected:     prot,
+				Participation: part,
+				Cap:           capVal,
+			})
+		}
+	}
+	
 	// Adicionar ativos customizados às listas se selecionado
 	for _, ticker := range customTickers {
 		if ticker == "" { continue }
@@ -187,6 +230,8 @@ func handleSimulate(w http.ResponseWriter, r *http.Request) {
 
 	// Serializar para JS
 	jsonBytes, _ := json.Marshal(customTickers)
+	// Serializar COEs para JS
+	coesBytes, _ := json.Marshal(coes)
 	
 	data := PageData{
 		StartDate:    startDateStr,
@@ -202,6 +247,9 @@ func handleSimulate(w http.ResponseWriter, r *http.Request) {
 		CustomDCA:    customDCA,
 		CustomLS:     customLS,
 		UseNative:    useNative,
+		ShowCOE:      coeEnabled,
+		COEs:         coes,
+		COEsJSON:     template.JS(coesBytes),
 	}
 
 	if len(dcaAssets) == 0 && len(lsAssets) == 0 {
@@ -284,6 +332,38 @@ func handleSimulate(w http.ResponseWriter, r *http.Request) {
 		// Qual valor? O mesmo que seria gasto no DCA (theoreticalTotalInvested).
 		lsRes := calculator.CalculateLumpSum(histData, theoreticalTotalInvested, fmt.Sprintf("Lump Sum %s", getAssetName(symbol)))
 		results = append(results, lsRes)
+	}
+
+	// Processar COE Strategies
+	if coeEnabled {
+		for _, coe := range coes {
+			// Mapear nome do ativo do COE para ticker real
+			ticker := coe.Asset
+			if coe.Asset == "BIG_TECHS" { ticker = "NASD11.SA" }
+			if coe.Asset == "IPCA" { ticker = "IMAB11.SA" }
+			if coe.Asset == "DOLAR" { ticker = "USDBRL=X" } 
+			if coe.Asset == "SP500" { ticker = "IVVB11.SA" }
+	
+			// Se não temos TotalInvested, usamos InitialAmount 
+			invested := theoreticalTotalInvested
+			if invested == 0 { invested = initialAmount }
+			if invested == 0 { invested = 1000 }
+	
+			histData, err := client.GetHistoricalData(ticker, startDate, endDate, true)
+			if err == nil {
+				part, _ := strconv.ParseFloat(coe.Participation, 64)
+				capLim, _ := strconv.ParseFloat(coe.Cap, 64)
+				
+				part = part / 100.0
+				capLim = capLim / 100.0
+				
+				coeRes := calculator.CalculateCOE(histData, invested, coe.Protected, part, capLim)
+				coeRes.StrategyName = fmt.Sprintf("COE %s (%s)", getAssetName(ticker), coeRes.StrategyName)
+				results = append(results, coeRes)
+			} else {
+				fmt.Printf("Erro dados COE %s: %v\n", ticker, err)
+			}
+		}
 	}
 
 	// Ordenar
